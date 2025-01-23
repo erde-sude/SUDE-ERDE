@@ -1,0 +1,124 @@
+import cv2
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+import logging
+
+# Configure logging for error tracking
+logging.basicConfig(level=logging.ERROR)
+
+# Directory where synthetic SEM images are saved
+synthetic_output_dir = "synthetic_sem_images"
+
+# Initialize list to hold processed images
+processed_images = []
+all_nanowire_lengths = []  # To store the lengths of all detected nanowires across images
+
+
+# Check if the directory exists
+if not os.path.exists(synthetic_output_dir):
+    print(f"Directory '{synthetic_output_dir}' does not exist. Please check the path.")
+    exit()
+
+# Get a list of all synthetic images
+synthetic_image_files = sorted(os.listdir(synthetic_output_dir))
+print(f"Found {len(synthetic_image_files)} files in the directory.")
+
+# Process all images
+for image_file in synthetic_image_files:
+    # Construct the full path to the image
+    image_path = os.path.join(synthetic_output_dir, image_file)
+    
+    # Load the synthetic image
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    
+    # Check if the image was loaded successfully
+    if image is None:
+        logging.error(f"Failed to load image: {image_path}")
+        continue  # Skip to the next file if the image is not loaded
+
+    print(f"Processing image: {image_file}")
+    
+    # Step 1: Noise reduction
+    # Option 1: Gaussian Blur
+    denoised_image = cv2.GaussianBlur(image, (15, 15), 0)
+    
+    # Option 2: Median Filtering (Uncomment the next line to use this)
+    # denoised_image = cv2.medianBlur(image, 15)
+    
+    # Option 3: Bilateral Filtering (Uncomment the next line to use this)
+    # denoised_image = cv2.bilateralFilter(image, 9, 75, 75)
+    
+    # Step 2: Edge detection using Canny
+    edges = cv2.Canny(denoised_image, threshold1=50, threshold2=100, apertureSize=3)
+    
+# Step 3: Hough Line Transform
+lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi / 180, threshold=20, minLineLength=100, maxLineGap=15)
+
+# Check if `edges` and `image` are valid
+if edges is None or image is None:
+    print("Error: Edges or Image not defined.")
+    exit()
+
+# Create a copy of the original image for visualization
+line_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+# Measure and visualize the lengths of the detected lines
+nanowire_lengths = []  # To store the lengths of detected nanowires
+
+if lines is not None:
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        # Calculate the length of the line
+        length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        nanowire_lengths.append(length)
+        # Draw the detected line on the image
+        cv2.line(line_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+else:
+    print("No lines were detected.")
+
+# Add lengths to the global list
+all_nanowire_lengths.extend(nanowire_lengths)
+
+# Calculate the average length of nanowires
+if all_nanowire_lengths:
+    overall_avg_length = np.mean(all_nanowire_lengths)
+    print(f"Overall average length of nanowires across {len(synthetic_image_files)} images: {overall_avg_length:.2f} pixels")
+else:
+    print(f"No nanowires detected in {image_file}.")
+    
+# Append the processed image
+processed_images.append((image, denoised_image, edges, line_image))
+
+# Check if any images were processed
+if not processed_images:
+    print("No valid images were processed.")
+    exit()
+
+# Display results for only 3 images
+for idx, (original, denoised, edges, line_image) in enumerate(processed_images[:3]):
+    plt.figure(figsize=(20, 5))
+    
+    # Original Image
+    plt.subplot(1, 4, 1)
+    plt.title("Original Image")
+    plt.imshow(original, cmap='gray')
+    
+    # Denoised Image
+    plt.subplot(1, 4, 2)
+    plt.title("Denoised Image")
+    plt.imshow(denoised, cmap='gray')
+    
+    # Edges
+    plt.subplot(1, 4, 3)
+    plt.title("Edges")
+    plt.imshow(edges, cmap='gray')
+    
+    # Hough Transform Result
+    plt.subplot(1, 4, 4)
+    plt.title("Hough Transform Result")
+    plt.imshow(cv2.cvtColor(line_image, cv2.COLOR_BGR2RGB))
+    
+    plt.show()
+
+print(f"Processed {len(processed_images)} images and displayed 3 of them.")
